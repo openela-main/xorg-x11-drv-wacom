@@ -1,0 +1,40 @@
+From 2a7af30793f9aa6e36acdc7c8b908d0965585437 Mon Sep 17 00:00:00 2001
+From: Jason Gerecke <killertofu@gmail.com>
+Date: Thu, 10 Oct 2019 12:13:39 -0700
+Subject: [PATCH] tools: Fix potential buffer overflow when reading from serial
+ tablet
+
+The read_data() function has a "min_len" number of bytes to read
+to ensure that a complete data structure is read, regardless of garbage
+that may be on the line. When garbage is present, however, it can
+potentially overflow the buffer.
+
+The function already has code to memmove the good data over garbage and
+perform re-reads until "min_len" bytes of good data are available. All
+we need to do to avoid the buffer overflow is ensure that the maximum
+number of bytes we read() in one call is no more than the number of
+bytes free at the end of the buffer.
+
+Ref: https://github.com/linuxwacom/xf86-input-wacom/issues/86
+Fixes: 3546d8ab1b ("tools: add isdv4-serial-debugger test program")
+Signed-off-by: Jason Gerecke <jason.gerecke@wacom.com>
+---
+ tools/tools-shared.c | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/tools/tools-shared.c b/tools/tools-shared.c
+index c55e8ca1..c10d8e86 100644
+--- a/tools/tools-shared.c
++++ b/tools/tools-shared.c
+@@ -219,7 +219,7 @@ int read_data(int fd, unsigned char* buffer, int min_len)
+ 	TRACE("Reading %d bytes from device.\n", min_len);
+ redo:
+ 	do {
+-		int l = read(fd, &buffer[len], min_len);
++		int l = read(fd, &buffer[len], min_len - len);
+ 
+ 		if (l == -1) {
+ 			if (errno != EAGAIN) {
+-- 
+2.23.0
+
