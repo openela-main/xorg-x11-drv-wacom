@@ -1,0 +1,103 @@
+From 1d3355582d67f2f3beb14359b07b7533c11cf9b3 Mon Sep 17 00:00:00 2001
+From: Jason Gerecke <jason.gerecke@wacom.com>
+Date: Tue, 30 Jul 2024 14:43:09 -0700
+Subject: [PATCH 5/7] Swap the relwheel actions triggered and defaults for
+ vertical scrolling
+
+Relative wheel actions are backwards from how the user thinks about them.
+If you want to get/set the action that occurs when scrolling up, you
+currently need to work with the REL_WHEEL_DOWN action. This is difficult
+to explain to users and is also makes the code more difficult to follow.
+
+This commit changes the behavior so that programming the REL_WHEEL_UP
+action actually affects what happens when you physically scroll the
+wheel up. The behavior is now: physical scroll wheel up -> positive
+delta from kernel -> REL_WHEEL_UP action -> X11 mouse button 4 ->
+window scrolls up.
+
+Note that this commit will break any xsetwacom scripts that users may
+have which change the relative wheel actions from their defaults. It
+would also affect control panels that rely on xsetwacom or configuring
+the driver directly. We don't expect this to cause significant
+problems in reality since Wacom has not produced tools with relative
+wheels in many years and so there are few scripts/control panels to
+break.
+
+Signed-off-by: Jason Gerecke <jason.gerecke@wacom.com>
+(cherry picked from commit a418ede89488ecbd2785860ff7ac112e37c6857b)
+---
+ src/wcmCommon.c | 17 +++++++++--------
+ src/wcmConfig.c |  4 ++--
+ src/wcmUSB.c    |  2 +-
+ 3 files changed, 12 insertions(+), 11 deletions(-)
+
+diff --git ./src/wcmCommon.c ../src/wcmCommon.c
+index 9bbffdd9d246..24f19a8a5823 100644
+--- ./src/wcmCommon.c
++++ ../src/wcmCommon.c
+@@ -511,17 +511,17 @@ static int getScrollDelta(int current, int old, int wrap, int flags)
+  * the scrolling axis and the possible events that can be
+  * sent.
+  *
+- * @param delta        Amount of change in the scrolling axis
+- * @param action_up    Array index of action to send on scroll up
+- * @param action_dn    Array index of action to send on scroll down
+- * @return             Array index of action that should be performed, or -1 if none.
++ * @param delta            Amount of change in the scrolling axis
++ * @param action_positive  Array index of action to send on a positive delta
++ * @param action_negative  Array index of action to send on negative delta
++ * @return                 Array index of action that should be performed, or -1 if none.
+  */
+-static int getWheelButton(int delta, int action_up, int action_dn)
++static int getWheelButton(int delta, int action_positive, int action_negative)
+ {
+ 	if (delta > 0)
+-		return action_up;
++		return action_positive;
+ 	else if (delta < 0)
+-		return action_dn;
++		return action_negative;
+ 	else
+ 		return -1;
+ }
+@@ -571,7 +571,8 @@ static void sendWheelStripEvents(WacomDevicePtr priv, const WacomDeviceState* ds
+ 		sendWheelStripEvent(priv, &priv->strip_actions[idx], ds, axes);
+ 	}
+ 
+-	/* emulate events for relative wheel */
++	/* emulate events for relative wheel:
++	 * positive delta = scroll up */
+ 	delta = getScrollDelta(ds->relwheel, 0, 0, 0);
+ 	idx = getWheelButton(delta, WHEEL_REL_UP, WHEEL_REL_DN);
+ 	if (idx >= 0 && (IsCursor(priv) || IsPad(priv)) && priv->oldState.proximity == ds->proximity)
+diff --git ./src/wcmConfig.c ../src/wcmConfig.c
+index 87a836ff768b..d63073e6d962 100644
+--- ./src/wcmConfig.c
++++ ../src/wcmConfig.c
+@@ -70,8 +70,8 @@ WacomDevicePtr wcmAllocate(void *frontend, const char *name)
+ 		priv->button_default[i] = (i < 3) ? i + 1 : i + 5;
+ 
+ 	priv->nbuttons = WCM_MAX_BUTTONS;       /* Default number of buttons */
+-	priv->wheel_default[WHEEL_REL_UP] = 5;
+-	priv->wheel_default[WHEEL_REL_DN] = 4;
++	priv->wheel_default[WHEEL_REL_UP] = 4;  /* scroll up */
++	priv->wheel_default[WHEEL_REL_DN] = 5;  /* scroll down */
+ 	/* wheel events are set to 0, but the pad overwrites this default
+ 	 * later in wcmParseOptions, when we have IsPad() available */
+ 	priv->wheel_default[WHEEL_ABS_UP] = 0;
+diff --git ./src/wcmUSB.c ../src/wcmUSB.c
+index 7d8f8f3385e2..e797ed9cd511 100644
+--- ./src/wcmUSB.c
++++ ../src/wcmUSB.c
+@@ -1925,7 +1925,7 @@ static void usbDispatchEvents(WacomDevicePtr priv)
+ 		{
+ 			switch (event->code) {
+ 			case REL_WHEEL:
+-				ds->relwheel = -event->value;
++				ds->relwheel = event->value;
+ 				ds->time = (int)wcmTimeInMillis();
+ 				common->wcmChannel[channel].dirty |= TRUE;
+ 				break;
+-- 
+2.50.1
+

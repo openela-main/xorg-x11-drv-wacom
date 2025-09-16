@@ -1,0 +1,28 @@
+From 700da5f30b89a4efcb3754859e893a5a84d7367b Mon Sep 17 00:00:00 2001
+From: Peter Hutterer <peter.hutterer@who-t.net>
+Date: Tue, 5 Aug 2025 12:34:59 +1000
+Subject: [PATCH] Map the second ring to abswheel2 on all DUALRING devices
+
+---
+ src/wcmUSB.c | 5 ++---
+ 1 file changed, 2 insertions(+), 3 deletions(-)
+
+diff --git a/src/wcmUSB.c b/src/wcmUSB.c
+index 4c038334a9d5..4765353e0f8d 100644
+--- a/src/wcmUSB.c
++++ b/src/wcmUSB.c
+@@ -1302,9 +1302,8 @@ static int usbParseWacomAbsEvent(WacomCommonPtr common,
+ 			ds->abswheel = event->value;
+ 			break;
+ 		case ABS_THROTTLE:
+-			/* 2nd touch ring comes in over ABS_THROTTLE for 24HD */
+-			if ((common->vendor_id == WACOM_VENDOR_ID) &&
+-			    (common->tablet_id == 0xF4 || common->tablet_id == 0xF8))
++			/* 2nd touch ring comes in over ABS_THROTTLE */
++			if (TabletHasFeature(common, WCM_DUALRING))
+ 				ds->abswheel2 = event->value;
+ 			break;
+ 		case ABS_MISC:
+-- 
+2.50.1
+

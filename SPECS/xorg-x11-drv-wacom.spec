@@ -9,7 +9,7 @@
 Summary:    Xorg X11 wacom input driver
 Name:       xorg-x11-drv-wacom
 Version:    1.0.0
-Release:    1%{?gitdate:.%{gitdate}git%{gitversion}}%{?dist}
+Release:    4%{?gitdate:.%{gitdate}git%{gitversion}}%{?dist}
 URL:        http://www.x.org
 License:    GPLv2+
 
@@ -20,6 +20,15 @@ Source2: commitid
 %else
 Source0: https://github.com/linuxwacom/xf86-input-wacom/releases/download/xf86-input-wacom-%{version}/xf86-input-wacom-%{version}.tar.bz2
 %endif
+
+Patch0001:	0001-Avoid-out-of-bounds-array-read-in-usbInitToolType-an.patch
+Patch0002:	0002-Do-not-log-errors-due-to-REL_WHEEL_HI_RES-events-fro.patch
+Patch0003:	0003-Fix-log-output-of-pointer-arbitration.patch
+Patch0004:	0004-Recognize-the-pad-in-more-situations.patch
+Patch0005:	0005-Swap-the-relwheel-actions-triggered-and-defaults-for.patch
+Patch0006:	0006-Update-xsetwacom-documentation.patch
+Patch0007:	0007-RHEL-map-relative-dials-into-abs-rings.patch
+Patch0008:	0008-Map-the-second-ring-to-abswheel2-on-all-DUALRING-dev.patch
 
 BuildRequires: make
 BuildRequires: xorg-x11-server-devel >= 1.10.99.902
@@ -40,6 +49,14 @@ X.Org X11 wacom input driver for Wacom tablets.
 
 %prep
 %setup -q -n %{tarball}-%{?gitdate:%{gitdate}}%{!?gitdate:%{version}}
+%patch -p1 0001
+%patch -p1 0002
+%patch -p1 0003
+%patch -p1 0004
+%patch -p1 0005
+%patch -p1 0006
+%patch -p1 0007
+%patch -p1 0008
 
 %build
 autoreconf --force -v --install || exit 1
@@ -102,6 +119,15 @@ will be available as normal evdev node.
 %{_unitdir}/wacom-inputattach@.service
 
 %changelog
+* Thu Aug 21 2025 Peter Hutterer <peter.hutterer@redhat.com> - 1.0.0-4
+- Fix axis inversion on the first relative dial  (RHEL-106467)
+
+* Tue Aug 05 2025 Peter Hutterer <peter.hutterer@redhat.com> - 1.0.0-3
+- Map ABS_THROTTLE to ring2 on all dualring devices (RHEL-106467)
+
+* Tue Jul 29 2025 Peter Hutterer <peter.hutterer@redhat.com> - 1.0.0-2
+- Add support for Wacom Intuos Pro 3rd Gen (RHEL-106467)
+
 * Wed Feb 16 2022 Peter Hutterer <peter.hutterer@redhat.com> - 1.0.0-1
 - xf86-input-wacom 1.0.0 (#2051828)
 

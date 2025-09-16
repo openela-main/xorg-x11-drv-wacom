@@ -1,0 +1,220 @@
+From 376e132685ea0bf9fb47ecaadd333edeca22946a Mon Sep 17 00:00:00 2001
+From: Jason Gerecke <jason.gerecke@wacom.com>
+Date: Tue, 28 May 2024 13:49:36 -0700
+Subject: [PATCH 7/7] RHEL: map relative dials into abs rings
+
+Map the rel dials into the existing ring axes instead to be
+consistent with the equivalent behavior of libinput and libwacom.
+This also doesn't require changes to existing xsetwacom scripts.
+
+This is a modified-down version of upstream commit b43c2597e:
+
+Implement support for devices with two relative wheels / dials
+
+Just like how tablets may have two absolute wheels, it also is possible
+for them to have two relative wheels. This commit extends the
+WACOM_PROP_WHEELBUTTONS property to reference two new actions:
+RelWheel2Up and RelWheel2Down. These actions will be triggered in
+response to horizontal scrolling events from the kernel (positive
+and negative REL_HWHEEL events, respecitively). The default action
+for these wheels is sending horizontal mouse scroll events (X11 mouse
+buttons 7 and 6, respectively).
+
+Signed-off-by: Jason Gerecke <jason.gerecke@wacom.com>
+(cherry picked from commit b43c2597e0604980ba66dda46270be40d3da2086)
+---
+ src/wcmCommon.c         | 27 +++++++++++++++++++++++----
+ src/wcmUSB.c            | 27 ++++++++++++++++++++++++++-
+ src/wcmValidateDevice.c | 12 ++++++++++++
+ src/xf86WacomDefs.h     |  1 +
+ 4 files changed, 62 insertions(+), 5 deletions(-)
+
+diff --git ./src/wcmCommon.c ../src/wcmCommon.c
+index 24f19a8a5823..795827d42895 100644
+--- ./src/wcmCommon.c
++++ ../src/wcmCommon.c
+@@ -581,6 +581,18 @@ static void sendWheelStripEvents(WacomDevicePtr priv, const WacomDeviceState* ds
+ 		sendWheelStripEvent(priv, &priv->wheel_actions[idx], ds, axes);
+ 	}
+ 
++#if 0
++	/* RHEL: mapped to abs rings */
++	/* emulate events for 2nd relative wheel */
++	delta = getScrollDelta(ds->relwheel2, 0, 0, 0);
++	idx = getWheelButton(delta, WHEEL2_REL_UP, WHEEL2_REL_DN);
++	if (idx >= 0 && (IsCursor(priv) || IsPad(priv)) && priv->oldState.proximity == ds->proximity)
++	{
++		DBG(10, priv, "Relative wheel 2 scroll delta = %d\n", delta);
++		sendWheelStripEvent(priv, &priv->wheel_actions[idx], ds, axes);
++	}
++#endif
++
+ 	/* emulate events for left touch ring */
+ 	delta = getScrollDelta(ds->abswheel, priv->oldState.abswheel, common->wcmMaxRing, AXIS_INVERT);
+ 	idx = getWheelButton(delta, WHEEL_ABS_UP, WHEEL_ABS_DN);
+@@ -622,7 +634,7 @@ static void sendCommonEvents(WacomDevicePtr priv, const WacomDeviceState* ds,
+ 		wcmSendButtons(priv, ds, buttons, axes);
+ 
+ 	/* emulate wheel/strip events when defined */
+-	if ( ds->relwheel || (ds->abswheel != priv->oldState.abswheel) || (ds->abswheel2 != priv->oldState.abswheel2) ||
++	if ( ds->relwheel || ds->relwheel2 || (ds->abswheel != priv->oldState.abswheel) || (ds->abswheel2 != priv->oldState.abswheel2) ||
+ 		( (ds->stripx - priv->oldState.stripx) && ds->stripx && priv->oldState.stripx) ||
+ 			((ds->stripy - priv->oldState.stripy) && ds->stripy && priv->oldState.stripy) )
+ 		sendWheelStripEvents(priv, ds, axes);
+@@ -711,7 +723,7 @@ wcmSendPadEvents(WacomDevicePtr priv, const WacomDeviceState* ds, const WacomAxi
+ 	if (!priv->oldState.proximity && ds->proximity)
+ 		wcmEmitProximity(priv, TRUE, axes);
+ 
+-	if (axes->mask || ds->buttons || ds->relwheel ||
++	if (axes->mask || ds->buttons || ds->relwheel || ds->relwheel2 ||
+ 	    (ds->abswheel != priv->oldState.abswheel) || (ds->abswheel2 != priv->oldState.abswheel2))
+ 	{
+ 		sendCommonEvents(priv, ds, axes);
+@@ -996,6 +1008,7 @@ wcmCheckSuppress(WacomCommonPtr common,
+ 	if (abs(dsOrig->abswheel  - dsNew->abswheel)  > suppress) goto out;
+ 	if (abs(dsOrig->abswheel2 - dsNew->abswheel2) > suppress) goto out;
+ 	if (dsNew->relwheel != 0) goto out;
++	if (dsNew->relwheel2 != 0) goto out;
+ 
+ 	returnV = SUPPRESS_ALL;
+ 
+@@ -1132,7 +1145,7 @@ void wcmEvent(WacomCommonPtr common, unsigned int channel,
+ 
+ 	DBG(10, common,
+ 		"c=%d i=0x%x t=0x%x s=0x%x x=%d y=%d b=%d "
+-		"p=%d rz=%d tx=%d ty=%d aw=%d aw2=%d rw=%d "
++		"p=%d rz=%d tx=%d ty=%d aw=%d aw2=%d rw=%d rw2=%d"
+ 		"t=%d px=%d st=%d cs=%d \n",
+ 		channel,
+ 		ds.device_id,
+@@ -1140,7 +1153,7 @@ void wcmEvent(WacomCommonPtr common, unsigned int channel,
+ 		ds.serial_num,
+ 		ds.x, ds.y, ds.buttons,
+ 		ds.pressure, ds.rotation, ds.tiltx,
+-		ds.tilty, ds.abswheel, ds.abswheel2, ds.relwheel, ds.throttle,
++		ds.tilty, ds.abswheel, ds.abswheel2, ds.relwheel, ds.relwheel2, ds.throttle,
+ 		ds.proximity, ds.sample,
+ 		pChannel->nSamples);
+ 
+@@ -1991,6 +2004,12 @@ TEST_CASE(test_suppress)
+ 	assert(rc == SUPPRESS_NONE);
+ 	new.relwheel = 0;
+ 
++	/* any movement on relwheel2 counts */
++	new.relwheel2 = 1;
++	rc = wcmCheckSuppress(&common, &old, &new);
++	assert(rc == SUPPRESS_NONE);
++	new.relwheel2 = 0;
++
+ 	/* x axis movement */
+ 
+ 	/* not enough movement */
+diff --git ./src/wcmUSB.c ../src/wcmUSB.c
+index e797ed9cd511..4c038334a9d5 100644
+--- ./src/wcmUSB.c
++++ ../src/wcmUSB.c
+@@ -1756,7 +1756,9 @@ static Bool eventCouldBeFromPad(WacomDevicePtr priv,
+ 	if (event_ptr->type == EV_REL) {
+ 		switch (event_ptr->code) {
+ 		case REL_WHEEL:
++		case REL_HWHEEL:
+ 		case REL_WHEEL_HI_RES:
++		case REL_HWHEEL_HI_RES:
+ 			return TRUE;
+ 		}
+ 	}
+@@ -1827,6 +1829,17 @@ static Bool usbIsTabletToolInProx(int device_type, int proximity)
+ 	return (is_tablet_tool && proximity);
+ }
+ 
++static int
++dialToRing(WacomCommonPtr common, int current_value, int event_value)
++{
++	const int ring_range = (common->wcmMaxRing - common->wcmMinRing + 1);
++
++	int value = current_value + ring_range + (event_value * ring_range / 24);
++	value = common->wcmMinRing + (value - common->wcmMinRing) % ring_range;
++
++	return value;
++}
++
+ static void usbDispatchEvents(WacomDevicePtr priv)
+ {
+ 	int i, c;
+@@ -1885,6 +1898,7 @@ static void usbDispatchEvents(WacomDevicePtr priv)
+ 
+ 	/* all USB data operates from previous context except relative values*/
+ 	ds->relwheel = 0;
++	ds->relwheel2 = 0;
+ 	ds->serial_num = private->wcmLastToolSerial;
+ 
+ 	/* loop through all events in group */
+@@ -1925,18 +1939,29 @@ static void usbDispatchEvents(WacomDevicePtr priv)
+ 		{
+ 			switch (event->code) {
+ 			case REL_WHEEL:
+-				ds->relwheel = event->value;
++				/* RHEL: map a wheel movement to 15 degrees movement on the ring */
++				ds->abswheel = dialToRing(common, ds->abswheel, -event->value);
+ 				ds->time = (int)wcmTimeInMillis();
+ 				common->wcmChannel[channel].dirty |= TRUE;
+ 				break;
+ 			case REL_WHEEL_HI_RES:
+ 				/* unsupported */
+ 				break;
++			case REL_HWHEEL:
++				/* RHEL: map a wheel movement to 15 degrees movement on the ring */
++				ds->abswheel2 = dialToRing(common, ds->abswheel2, event->value);
++				ds->time = wcmTimeInMillis();
++				common->wcmChannel[channel].dirty |= TRUE;
++				break;
++			case REL_HWHEEL_HI_RES:
++				/* unsupported */
++				break;
+ 			default:
+ 				wcmLogSafe(priv, W_ERROR,
+ 						      "%s: rel event recv'd (%d)!\n",
+ 						      priv->name,
+ 						      event->code);
++				break;
+ 			}
+ 		}
+ 		else if (event->type == EV_KEY)
+diff --git ./src/wcmValidateDevice.c ../src/wcmValidateDevice.c
+index 10b2c7f6ff6b..ab78c4e2010c 100644
+--- ./src/wcmValidateDevice.c
++++ ../src/wcmValidateDevice.c
+@@ -222,6 +222,18 @@ int wcmDeviceTypeKeys(WacomDevicePtr priv)
+ 
+ 	switch (priv->common->tablet_id)
+ 	{
++		case 0x3F7: /* Intuos Pro M 3rd */
++		case 0x3F8: /* Intuos Pro M 3rd (Bluetooth) */
++		case 0x3F9: /* Intuos Pro L 3rd */
++		case 0x3FA: /* Intuos Pro L 3rd (Bluetooth) */
++			TabletSetFeature(priv->common, WCM_DUALRING);
++			_fallthrough_;
++		case 0x3F5: /* Intuos Pro S 3rd */
++		case 0x3F6: /* Intuos Pro S 3rd (Bluetooth) */
++			TabletSetFeature(priv->common, WCM_RING);
++			TabletSetFeature(priv->common, WCM_ROTATION);
++			break;
++
+ 		case 0xF8:  /* Cintiq 24HDT */
+ 		case 0xF4:  /* Cintiq 24HD */
+ 			TabletSetFeature(priv->common, WCM_DUALRING);
+diff --git ./src/xf86WacomDefs.h ../src/xf86WacomDefs.h
+index 604c9a16d8b2..c4d871a5009e 100644
+--- ./src/xf86WacomDefs.h
++++ ../src/xf86WacomDefs.h
+@@ -200,6 +200,7 @@ struct _WacomDeviceState
+ 	int abswheel;
+ 	int abswheel2;
+ 	int relwheel;
++	int relwheel2;
+ 	int distance;
+ 	int throttle;
+ 	int proximity;
+-- 
+2.50.1
+

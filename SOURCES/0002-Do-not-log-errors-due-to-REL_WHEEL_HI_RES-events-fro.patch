@@ -1,0 +1,49 @@
+From 09650be508c35f1e2b5ca9d407af394e18f24265 Mon Sep 17 00:00:00 2001
+From: Jason Gerecke <jason.gerecke@wacom.com>
+Date: Thu, 1 Aug 2024 10:44:42 -0700
+Subject: [PATCH 2/7] Do not log errors due to REL_WHEEL_HI_RES events from
+ kernel
+
+High-res events are "expected" from the kernel going forward. We may not
+support doing anything with them, but we also shouldn't clutter the logs
+with error messages.
+
+Signed-off-by: Jason Gerecke <jason.gerecke@wacom.com>
+(cherry picked from commit 8be74a345eeaa6440d1f315b6836eda58e495ebb)
+---
+ src/wcmUSB.c | 12 ++++++++----
+ 1 file changed, 8 insertions(+), 4 deletions(-)
+
+diff --git ./src/wcmUSB.c ../src/wcmUSB.c
+index 6d8770926530..8316c98ed058 100644
+--- ./src/wcmUSB.c
++++ ../src/wcmUSB.c
+@@ -1907,17 +1907,21 @@ static void usbDispatchEvents(WacomDevicePtr priv)
+ 		}
+ 		else if (event->type == EV_REL)
+ 		{
+-			if (event->code == REL_WHEEL)
+-			{
++			switch (event->code) {
++			case REL_WHEEL:
+ 				ds->relwheel = -event->value;
+ 				ds->time = (int)wcmTimeInMillis();
+ 				common->wcmChannel[channel].dirty |= TRUE;
+-			}
+-			else
++				break;
++			case REL_WHEEL_HI_RES:
++				/* unsupported */
++				break;
++			default:
+ 				wcmLogSafe(priv, W_ERROR,
+ 						      "%s: rel event recv'd (%d)!\n",
+ 						      priv->name,
+ 						      event->code);
++			}
+ 		}
+ 		else if (event->type == EV_KEY)
+ 		{
+-- 
+2.50.1
+

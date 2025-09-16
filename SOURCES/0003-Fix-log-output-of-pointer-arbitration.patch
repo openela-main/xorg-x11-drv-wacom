@@ -1,0 +1,30 @@
+From 9af76682306c7acf5c35b7dc0c274254d70fc3d3 Mon Sep 17 00:00:00 2001
+From: Jason Gerecke <jason.gerecke@wacom.com>
+Date: Wed, 31 Jul 2024 10:42:46 -0700
+Subject: [PATCH 3/7] Fix log output of pointer arbitration
+
+Misplaced newline causes logs some logs to get intermingled.
+Whichever log follows this one becomes part of the same entry.
+
+Signed-off-by: Jason Gerecke <jason.gerecke@wacom.com>
+(cherry picked from commit 388cbf8263fe50c79d2e7ff0291f21d1b16861e5)
+---
+ src/wcmCommon.c | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git ./src/wcmCommon.c ../src/wcmCommon.c
+index 6e246fd86435..9bbffdd9d246 100644
+--- ./src/wcmCommon.c
++++ ../src/wcmCommon.c
+@@ -1070,7 +1070,7 @@ static Bool check_arbitrated_control(WacomDevicePtr priv, WacomDeviceStatePtr ds
+ 
+ 	if (IsPad(priv)) {
+ 		/* Pad may never be the "active" pointer controller */
+-		DBG(6, priv, "Event from pad; not yielding pointer control\n.");
++		DBG(6, priv, "Event from pad; not yielding pointer control.\n");
+ 		return FALSE;
+ 	}
+ 
+-- 
+2.50.1
+

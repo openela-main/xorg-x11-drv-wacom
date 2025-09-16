@@ -1,0 +1,88 @@
+From 881efba2c23df79dab21c51b7ae0abdb2b633087 Mon Sep 17 00:00:00 2001
+From: Jason Gerecke <jason.gerecke@wacom.com>
+Date: Wed, 31 Jul 2024 15:37:19 -0700
+Subject: [PATCH 4/7] Recognize the pad in more situations
+
+Allow dial and ring events to be recognized as coming from the pad
+when there are no other better sources of information (for example,
+BTN_TOOL_* events earlier in the event packet, an ABS_MISC with the
+information, or a previously-known tool type).
+
+This fixes an issue where the pad is not recognized (and events are
+not generated) if your first interaction is with a relative wheel
+rather than a button or touchring. The events types matched by this
+function have an ambiguous source on their own, but other earlier
+tests would be able to determine the type from other context. If
+all other context-sensitive tests fail to find a tool type, it is
+reasonably safe to assume we're looking at a pad.
+
+Signed-off-by: Jason Gerecke <jason.gerecke@wacom.com>
+(cherry picked from commit a91168c7c257e7727e9c70cef48d6d6d3d1d926f)
+---
+ src/wcmUSB.c | 28 ++++++++++++++++++++++------
+ 1 file changed, 22 insertions(+), 6 deletions(-)
+
+diff --git ./src/wcmUSB.c ../src/wcmUSB.c
+index 8316c98ed058..7d8f8f3385e2 100644
+--- ./src/wcmUSB.c
++++ ../src/wcmUSB.c
+@@ -1726,8 +1726,8 @@ static int refreshDeviceType(WacomDevicePtr priv, int fd)
+ 	return 0;
+ }
+ 
+-static int deriveDeviceTypeFromButtonEvent(WacomDevicePtr priv,
+-					   const struct input_event *event_ptr)
++static Bool eventCouldBeFromPad(WacomDevicePtr priv,
++			       const struct input_event *event_ptr)
+ {
+ 	WacomCommonPtr common = priv->common;
+ 	wcmUSBData *usbdata = common->private;
+@@ -1743,17 +1743,32 @@ static int deriveDeviceTypeFromButtonEvent(WacomDevicePtr priv,
+ 		case BTN_BACK:
+ 		case BTN_EXTRA:
+ 		case BTN_FORWARD:
+-			return PAD_ID;
++			return TRUE;
+ 		default:
+ 			for (nkeys = 0; nkeys < usbdata->npadkeys; nkeys++)
+ 			{
+ 				if (event_ptr->code == usbdata->padkey_code[nkeys]) {
+-					return PAD_ID;
++					return TRUE;
+ 				}
+ 			}
+ 		}
+ 	}
+-	return 0;
++	if (event_ptr->type == EV_REL) {
++		switch (event_ptr->code) {
++		case REL_WHEEL:
++		case REL_WHEEL_HI_RES:
++			return TRUE;
++		}
++	}
++	if (event_ptr->type == EV_ABS) {
++		switch (event_ptr->code) {
++		case ABS_WHEEL:
++		case ABS_THROTTLE:
++			return TRUE;
++		}
++	}
++
++	return FALSE;
+ }
+ 
+ /***
+@@ -1790,7 +1805,8 @@ static int usbInitToolType(WacomDevicePtr priv, int fd,
+ 
+ 	if (!device_type) /* expresskey pressed at startup or missing type */
+ 		for (i = 0; (i < nevents) && !device_type; ++i)
+-			device_type = deriveDeviceTypeFromButtonEvent(priv, &event_ptr[i]);
++			if (eventCouldBeFromPad(priv, &event_ptr[i]))
++				device_type = PAD_ID;
+ 
+ 	return device_type;
+ }
+-- 
+2.50.1
+

@@ -1,0 +1,71 @@
+From a22e337ec61ff092acdd6a9f210c3208c9201a27 Mon Sep 17 00:00:00 2001
+From: Jason Gerecke <jason.gerecke@wacom.com>
+Date: Tue, 28 May 2024 13:41:34 -0700
+Subject: [PATCH 6/7] Update xsetwacom documentation
+
+Updates documentation for some of the button-like parameters. The man
+page for xsetwacom now lists all button-like parameters and the help
+page now describes the 2nd absolute wheel properly.
+
+Signed-off-by: Jason Gerecke <jason.gerecke@wacom.com>
+(cherry picked from commit 7722f2ea1d6e50b26ec273becc8ded901f14590f)
+---
+ man/xsetwacom.man | 18 +++++++++++++++---
+ tools/xsetwacom.c |  4 ++--
+ 2 files changed, 17 insertions(+), 5 deletions(-)
+
+diff --git ./man/xsetwacom.man ../man/xsetwacom.man
+index 968d4797c7d6..9f4aa008fdde 100644
+--- ./man/xsetwacom.man
++++ ../man/xsetwacom.man
+@@ -98,10 +98,22 @@ applied. Input outside of these coordinates will be clipped to the edges
+ of the area defined.  Default:  0 0 x2 y2; with x2 and y2 tablet specific.
+ .TP
+ \fBButton\fR button-number [mapping]
+-Set a mapping for the specified button-number. Mappings take the form of
++.TQ
++\fBAbsWheelUp\fR [mapping]
++.TQ
++\fBAbsWheelDown\fR [mapping]
++.TQ
++\fBAbsWheel2Up\fR [mapping]
++.TQ
++\fBAbsWheel2Down\fR [mapping]
++.TQ
++\fBRelWheelUp\fR [mapping]
++.TQ
++\fBRelWheelDown\fR [mapping]
++Set a mapping for the specified control. Mappings take the form of
+ either a single numeric button or an 'action' to be performed. If no mapping
+-is provided, the default mapping is restored. If button-number is mapped
+-to 0, the Button event is ignored.
++is provided, the default mapping is restored. If a control is mapped
++to 0, the event is ignored.
+ 
+ Numeric button mappings indicate what X11 button number the given button-number
+ should correspond to. For example, a mapping of "3" means a press of the given
+diff --git ./tools/xsetwacom.c ../tools/xsetwacom.c
+index 6ccd7c2c488f..4bc5587f2f03 100644
+--- ./tools/xsetwacom.c
++++ ../tools/xsetwacom.c
+@@ -330,7 +330,7 @@ static param_t parameters[] =
+ 	},
+ 	{
+ 		.name = "AbsWheel2Up",
+-		.desc = "X11 event to which absolute wheel up should be mapped. ",
++		.desc = "X11 event to which 2nd absolute wheel up should be mapped. ",
+ 		.prop_name = WACOM_PROP_WHEELBUTTONS,
+ 		.prop_format = 8,
+ 		.prop_offset = 4,
+@@ -340,7 +340,7 @@ static param_t parameters[] =
+ 	},
+ 	{
+ 		.name = "AbsWheel2Down",
+-		.desc = "X11 event to which absolute wheel down should be mapped. ",
++		.desc = "X11 event to which 2nd absolute wheel down should be mapped. ",
+ 		.prop_name = WACOM_PROP_WHEELBUTTONS,
+ 		.prop_format = 8,
+ 		.prop_offset = 5,
+-- 
+2.50.1
+
