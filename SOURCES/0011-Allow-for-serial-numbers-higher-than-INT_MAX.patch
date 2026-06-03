@@ -1,0 +1,31 @@
+From faf7e65df21add59e2a48e2b8c2170fbb134b941 Mon Sep 17 00:00:00 2001
+From: Peter Hutterer <peter.hutterer@who-t.net>
+Date: Wed, 4 Mar 2026 16:06:25 +1000
+Subject: [PATCH 3/3] Allow for serial numbers higher than INT_MAX
+
+Our serials are 32-bit unsigned integers except in wcmOptionDupConvert where they
+were converted to an int. Together with the (serial > -1) comparison
+this caused valid device serial numbers in the INT_MAX..UINT_MAX - 1
+range to be ignored.
+
+Resolves: RHEL-153532
+---
+ src/x11/xf86Wacom.c | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git ./src/x11/xf86Wacom.c ../src/x11/xf86Wacom.c
+index 066fb23a8226..1abc78c40286 100644
+--- ./src/x11/xf86Wacom.c
++++ ../src/x11/xf86Wacom.c
+@@ -248,7 +248,7 @@ static InputOption *wcmOptionDupConvert(WacomDevicePtr priv, const char* name, c
+ 	options = xf86ReplaceStrOption(options, "Type", type);
+ 	options = xf86ReplaceStrOption(options, "Name", name);
+ 
+-	if (serial > -1)
++	if (serial != -1)
+ 	{
+ 		while (ser->serial && ser->serial != (unsigned int)(serial))
+ 			ser = ser->next;
+-- 
+2.53.0
+

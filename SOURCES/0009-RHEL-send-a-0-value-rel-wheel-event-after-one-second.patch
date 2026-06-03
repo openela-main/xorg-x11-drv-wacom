@@ -1,0 +1,188 @@
+From 3391ed66ee79cb5bb0e7565a3f2e2dd0b6e7fc7b Mon Sep 17 00:00:00 2001
+From: Peter Hutterer <peter.hutterer@who-t.net>
+Date: Tue, 3 Mar 2026 11:36:16 +1000
+Subject: [PATCH 1/3] RHEL: send a 0-value rel wheel event after one second
+
+We're mapping REL_WHEEL to behave ABS_WHEEL so we don't need an updated
+userspace to handle the relative wheels on the 2025 Intuos Pro. But
+ABS_WHEEL sends a 0 event whenever the finger is released - and the
+driver used to pass that on. Let's emulate the same behavior for
+REL_WHEEL and fire a 0 event after 1 second of no events.
+
+Same above for REL_HWHEEL.
+
+Resolves: RHEL-126668
+---
+ src/wcmCommon.c     |  3 ++
+ src/wcmUSB.c        | 79 +++++++++++++++++++++++++++++++++++++++++----
+ src/xf86WacomDefs.h |  1 +
+ 3 files changed, 77 insertions(+), 6 deletions(-)
+
+diff --git ./src/wcmCommon.c ../src/wcmCommon.c
+index 795827d42895..2b1fa24147c8 100644
+--- ./src/wcmCommon.c
++++ ../src/wcmCommon.c
+@@ -1711,6 +1711,9 @@ void wcmFreeCommon(WacomCommonPtr *ptr)
+ 	DBG(10, common, "common refcount dec to %d\n", common->refcnt - 1);
+ 	if (--common->refcnt == 0)
+ 	{
++		WacomHWClass *cls = common->wcmDevCls;
++		if (cls->Free)
++			cls->Free(common->private);
+ 		free(common->private);
+ 		while (common->serials)
+ 		{
+diff --git ./src/wcmUSB.c ../src/wcmUSB.c
+index 1c3c7beddd4d..410ced9b1614 100644
+--- ./src/wcmUSB.c
++++ ../src/wcmUSB.c
+@@ -46,11 +46,15 @@ typedef struct {
+ 	int padkey_code[WCM_MAX_BUTTONS];/* hardware codes for buttons */
+ 	int lastChannel;
+ 	Bool grabDevice;
++
++	/* RHEL: timer for 0 events on REL_WHEEL */
++	WacomTimerPtr relDialTimer;
+ } wcmUSBData;
+ 
+ static Bool usbDetect(WacomDevicePtr priv);
+ static Bool usbParseOptions(WacomDevicePtr priv);
+ static Bool usbWcmInit(WacomDevicePtr priv);
++static void usbWcmFree(void *data);
+ static int usbProbeKeys(WacomDevicePtr priv);
+ static int usbStart(WacomDevicePtr priv);
+ static int usbInitProtocol5(WacomDevicePtr priv);
+@@ -73,6 +77,7 @@ static WacomHWClass gWacomUSBDevice =
+ 	.ProbeKeys = usbProbeKeys,
+ 	.ParseOptions = usbParseOptions,
+ 	.Init = usbWcmInit,
++	.Free = usbWcmFree,
+ };
+ WacomHWClass *WacomGetClassUSB(void) { return &gWacomUSBDevice; }
+ 
+@@ -146,6 +151,7 @@ static Bool usbParseOptions(WacomDevicePtr priv)
+ 
+ 	usbdata = common->private;
+ 	usbdata->grabDevice = wcmOptCheckBool(priv, "GrabDevice", FALSE);
++	usbdata->relDialTimer = wcmTimerNew();
+ 
+ 	return TRUE;
+ }
+@@ -501,6 +507,16 @@ static Bool usbWcmInit(WacomDevicePtr priv)
+ 	return Success;
+ }
+ 
++static void
++usbWcmFree(void *data)
++{
++	wcmUSBData* private = data;
++
++	if (private && private->relDialTimer)
++		wcmTimerFree(private->relDialTimer);
++	/* caller frees data */
++}
++
+ static int usbInitProtocol5(WacomDevicePtr priv)
+ {
+ 	WacomCommonPtr common = priv->common;
+@@ -1839,6 +1855,34 @@ dialToRing(WacomCommonPtr common, int current_value, int event_value)
+ 	return value;
+ }
+ 
++static uint32_t
++resetDialToZero(WacomTimerPtr timer, uint32_t millis, void *userdata)
++{
++	/* Luckily nothing cares about the event timestamp */
++	const struct input_event wheel = {
++		.type = EV_REL,
++		.code = REL_WHEEL,
++		.value = 0,
++	};
++	const struct input_event hwheel = {
++		.type = EV_REL,
++		.code = REL_HWHEEL,
++		.value = 0,
++	};
++	const struct input_event syn = {
++		.type = EV_SYN,
++		.code = SYN_REPORT,
++		.value = 0,
++	};
++	WacomDevicePtr priv = userdata;
++
++	usbParseEvent(priv, &wheel);
++	usbParseEvent(priv, &hwheel);
++	usbParseEvent(priv, &syn);
++
++	return 0; /* no reset */
++}
++
+ static void usbDispatchEvents(WacomDevicePtr priv)
+ {
+ 	int i, c;
+@@ -1936,21 +1980,44 @@ static void usbDispatchEvents(WacomDevicePtr priv)
+ 		}
+ 		else if (event->type == EV_REL)
+ 		{
++			int prev_value = 0;
+ 			switch (event->code) {
+ 			case REL_WHEEL:
+-				/* RHEL: map a wheel movement to 15 degrees movement on the ring */
+-				ds->abswheel = dialToRing(common, ds->abswheel, -event->value);
++				/* RHEL: map a wheel movement to 15 degrees movement on the ring.
++				 * 1s after the last movement a timer fires and sends a REL_WHEEL 0
++				 * event to emulate the ring release event - for backwards compat
++				 * with rings (RHEL-126668) */
++				prev_value = ds->abswheel;
++				if (event->value == 0)
++					ds->abswheel = 0;
++				else
++					ds->abswheel = dialToRing(common, ds->abswheel, -event->value);
+ 				ds->time = (int)wcmTimeInMillis();
+-				common->wcmChannel[channel].dirty |= TRUE;
++				if (prev_value != ds->abswheel)
++					common->wcmChannel[channel].dirty |= TRUE;
++
++				if (event->value)
++					wcmTimerSet(private->relDialTimer, 1000, resetDialToZero, priv);
+ 				break;
+ 			case REL_WHEEL_HI_RES:
+ 				/* unsupported */
+ 				break;
+ 			case REL_HWHEEL:
+-				/* RHEL: map a wheel movement to 15 degrees movement on the ring */
+-				ds->abswheel2 = dialToRing(common, ds->abswheel2, event->value);
++				/* RHEL: map a wheel movement to 15 degrees movement on the ring.
++				 * 1s after the last movement a timer fires and sends a REL_WHEEL 0
++				 * event to emulate the ring release event - for backwards compat
++				 * with rings (RHEL-126668) */
++				prev_value = ds->abswheel2;
++				if (event->value == 0)
++					ds->abswheel2 = 0;
++				else
++					ds->abswheel2 = dialToRing(common, ds->abswheel2, event->value);
+ 				ds->time = wcmTimeInMillis();
+-				common->wcmChannel[channel].dirty |= TRUE;
++				if (prev_value != ds->abswheel2)
++					common->wcmChannel[channel].dirty |= TRUE;
++
++				if (event->value)
++					wcmTimerSet(private->relDialTimer, 1000, resetDialToZero, priv);
+ 				break;
+ 			case REL_HWHEEL_HI_RES:
+ 				/* unsupported */
+diff --git ./src/xf86WacomDefs.h ../src/xf86WacomDefs.h
+index c4d871a5009e..69e95ca4af97 100644
+--- ./src/xf86WacomDefs.h
++++ ../src/xf86WacomDefs.h
+@@ -349,6 +349,7 @@ struct _WacomHWClass
+ 	int  (*ProbeKeys)(WacomDevicePtr priv); /* set the bits for the keys supported */
+ 	Bool (*ParseOptions)(WacomDevicePtr priv); /* parse class-specific options */
+ 	Bool (*Init)(WacomDevicePtr priv);   /* initialize device */
++	void (*Free)(void *private);         /* free device */
+ };
+ 
+ extern WacomHWClass *WacomGetClassUSB(void);
+-- 
+2.53.0
+

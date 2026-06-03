@@ -1,0 +1,39 @@
+From 64f49d9b616124e56d7a4f46eb7df14cdb4ebc8d Mon Sep 17 00:00:00 2001
+From: viralesveras <113930878+viralesveras@users.noreply.github.com>
+Date: Tue, 27 Jan 2026 05:13:41 -0800
+Subject: [PATCH 2/3] Restored usage of toolserials beyond the first one
+
+Due to a change in 6bd9b92, having more than one toolserial specified would
+lead to "already have a device with this type/serial" for every
+tool beyond the first one listed in ToolSerials.
+
+This reverts the relevant portion of 6bd9b92 so that multiple
+Toolserials work properly again.
+
+(cherry picked from commit 324f33cb3c96493824033817e5f5f08b7e928547)
+
+Resolves: RHEL-153532
+---
+ src/x11/xf86Wacom.c | 5 +++++
+ 1 file changed, 5 insertions(+)
+
+diff --git ./src/x11/xf86Wacom.c ../src/x11/xf86Wacom.c
+index c4ea043f9ca6..066fb23a8226 100644
+--- ./src/x11/xf86Wacom.c
++++ ../src/x11/xf86Wacom.c
+@@ -249,7 +249,12 @@ static InputOption *wcmOptionDupConvert(WacomDevicePtr priv, const char* name, c
+ 	options = xf86ReplaceStrOption(options, "Name", name);
+ 
+ 	if (serial > -1)
++	{
++		while (ser->serial && ser->serial != (unsigned int)(serial))
++			ser = ser->next;
++
+ 		options = xf86ReplaceIntOption(options, "Serial", ser->serial);
++	}
+ 
+ 	o = options;
+ 	while(o)
+-- 
+2.53.0
+

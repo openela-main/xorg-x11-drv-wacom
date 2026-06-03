@@ -9,7 +9,7 @@
 Summary:    Xorg X11 wacom input driver
 Name:       xorg-x11-drv-wacom
 Version:    1.0.0
-Release:    4%{?gitdate:.%{gitdate}git%{gitversion}}%{?dist}
+Release:    5%{?gitdate:.%{gitdate}git%{gitversion}}%{?dist}
 URL:        http://www.x.org
 License:    GPLv2+
 
@@ -29,6 +29,9 @@ Patch0005:	0005-Swap-the-relwheel-actions-triggered-and-defaults-for.patch
 Patch0006:	0006-Update-xsetwacom-documentation.patch
 Patch0007:	0007-RHEL-map-relative-dials-into-abs-rings.patch
 Patch0008:	0008-Map-the-second-ring-to-abswheel2-on-all-DUALRING-dev.patch
+Patch0009:	0009-RHEL-send-a-0-value-rel-wheel-event-after-one-second.patch
+Patch0010:	0010-Restored-usage-of-toolserials-beyond-the-first-one.patch
+Patch0011:	0011-Allow-for-serial-numbers-higher-than-INT_MAX.patch
 
 BuildRequires: make
 BuildRequires: xorg-x11-server-devel >= 1.10.99.902
@@ -57,6 +60,9 @@ X.Org X11 wacom input driver for Wacom tablets.
 %patch -p1 0006
 %patch -p1 0007
 %patch -p1 0008
+%patch -p1 0009
+%patch -p1 0010
+%patch -p1 0011
 
 %build
 autoreconf --force -v --install || exit 1
@@ -119,6 +125,10 @@ will be available as normal evdev node.
 %{_unitdir}/wacom-inputattach@.service
 
 %changelog
+* Tue Mar 03 2026 Peter Hutterer <peter.hutterer@redhat.com> - 1.0.0-5
+- Emulate a zero axis events after REL_WHEEL (RHEL-153540)
+- Fix ToolSerials assignment for serials greater than INT_MAX (RHEL-153532)
+
 * Thu Aug 21 2025 Peter Hutterer <peter.hutterer@redhat.com> - 1.0.0-4
 - Fix axis inversion on the first relative dial  (RHEL-106467)
 
